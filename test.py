@@ -1,10 +1,11 @@
 import arena
 arena.init("oz.andrew.cmu.edu", "realm", "kaichieh1")
-cybertruck = arena.Object(objType=arena.Shape.gltf_model,
+basketballStand = arena.Object(objType=arena.Shape.gltf_model,
     location=(0, 0, 0),
-    url="https://raw.githubusercontent.com/kaichiehuang/Arena/master/3Dmodels/basketball")
+    scale=(0.01, 0.01, 0.01),
+    url="https://rawcdn.githack.com/kaichiehuang/Arena/3ff149db669fd06ee05ed7b542faad1bd85a6ee8/3Dmodels/basketballStand.glb?raw=true")
 
-
+print('yo')
 
 # cybertruck = arena.Object(
 #     objName="cybertruck",
