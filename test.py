@@ -1,11 +1,10 @@
 import arena
 arena.init("oz.andrew.cmu.edu", "realm", "kaichieh1")
 cybertruck = arena.Object(objType=arena.Shape.gltf_model,
-    scale=(0.1, 0.1, 0.1),
     location=(0, 0, 0),
-    url="https://xr.andrew.cmu.edu/models/cybertruck/scene.gltf")
+    url="https://raw.githubusercontent.com/kaichiehuang/Arena/master/3Dmodels/basketball")
 
-cybertruck.update(data='{"animation-mixer": {"clip": "*"}}')
+
 
 # cybertruck = arena.Object(
 #     objName="cybertruck",
