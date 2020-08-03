@@ -17,20 +17,25 @@ def tag_callback(event=None):
         print("Tag rotation: " + str(event.rotation))
 
 
-arena.init("oz.andrew.cmu.edu", "realm", "kaichieh2")
+arena.init("oz.andrew.cmu.edu", "realm", "kaichieh5")
 # apriltag_450 will receive position/rotation updates so don't set them
-TAG = arena.Object(objName="apriltag_450",
+TAG = arena.Object(objName="apriltag_500",
                    transparency=arena.Transparency(True, 0),
                    callback=tag_callback,
                    persist=True)
 # duck as child to it can can be rotated relative to apriltag
-arena.Object(objName="duck",
-             objType=arena.Shape.gltf_model,
+# arena.Object(objName="duck",
+#              objType=arena.Shape.gltf_model,
+#              scale=(0.1, 0.1, 0.1),
+#              rotation=(0.7, 0, 0, 0.7),
+#              parent=TAG.objName,
+#              url="models/Duck.glb",
+#              persist=True)
+
+arena.Object(objName="cone",
+             objType=arena.Shape.cone,
              scale=(0.1, 0.1, 0.1),
-             rotation=(0.7, 0, 0, 0.7),
-             parent=TAG.objName,
-             url="models/Duck.glb",
-             persist=True)
+             parent=TAG.objName)
 
 # our main event loop
 arena.handle_events()

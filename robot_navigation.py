@@ -1,19 +1,28 @@
 import anki_vector
 from anki_vector.util import distance_mm, speed_mmps, Pose, Angle
 from anki_vector.events import Events
+from pyquaternion import Quaternion
 import time
 import heapq
 import arena
 import math
 import numpy as np
+print("before arena init")
 arena.init("oz.andrew.cmu.edu", "realm", "kaichieh1")
+print("after")
 
 robot = anki_vector.AsyncRobot()
 #robot = anki_vector.Robot()
 robot.connect()
 location = {}
-current_direction = (1, 0)
+current_direction = tuple()
+current_position = tuple()
+current_rotation = tuple()
+current = tuple()
 red = (255, 0, 0)
+cleanUpdate = False
+robot_is_not_moving = True
+arrived = False
 
 def unit_vector(vector):
     """ Returns the unit vector of the vector.  """
@@ -22,9 +31,6 @@ def unit_vector(vector):
 def angle_between(v1, v2):
     """ Returns the angle in radians between vectors 'v1' and 'v2'
     Source: https://stackoverflow.com/questions/2827393/angles-between-two-n-dimensional-vectors-in-python#answer-13849249 """
-    # v1_u = unit_vector(v1)
-    # v2_u = unit_vector(v2)
-    # return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
     angle = np.math.atan2(np.linalg.det([v1,v2]),np.dot(v1,v2))
     return angle
 
@@ -76,7 +82,6 @@ def plan_path(graph, start, goal):
     came_from = {}
     came_from[start] = None
 
-    
     while not frontier.empty():
         current = frontier.get()
         
@@ -103,7 +108,28 @@ def reconstruct_path(came_from, start, goal):
     path.reverse()
     return path
 
+def calibrate_robot(calibrate_to_position, calibrate_to_direction = (1, 0)):
+    if cleanUpdate == True:
+        pass
+        
+
 #below are Arena functions
+def tag_callback(event=None):
+    ''' Since we expect the position/rotation updates, we can react here.'''
+    global current_rotation, current_position, cleanUpdate
+    if event.event_action == arena.EventAction.update and \
+            event.event_type == arena.EventType.object and robot_is_not_moving == True:
+        print("Tag position: " + str(event.position))
+        print("Tag rotation: " + str(event.rotation))
+        current_position = event.position
+        current_rotation = event.rotation
+
+        cleanUpdate = True
+        
+
+
+
+
 def poseConvert(original, to, position):
     if original == 'arena' and to == 'robot':
         x = position[0] * 1000
@@ -117,8 +143,6 @@ def poseConvert(original, to, position):
         z = -1 * position[1]/1000
         return (x, y, z)
     elif original == 'arena' and to == 'grid':
-        # x = math.floor(position[0]/0.1)
-        # y = math.floor(position[2]/0.1)
         x = int(position[0]/0.1)
         y = int(position[2]/0.1)
         return (x, y)
@@ -130,7 +154,7 @@ def poseConvert(original, to, position):
         return poseConvert('arena', 'robot', poseConvert('grid', 'arena', position))
 
 
-def initLocA():
+def init():
     location["A"] = arena.Object(objType=arena.Shape.circle,
         objName='A',
         clickable=True,
@@ -140,13 +164,37 @@ def initLocA():
         callback=aCallback,
         )
 
+    TAG = arena.Object(objName="apriltag_500",
+                   transparency=arena.Transparency(True, 0),
+                   callback=tag_callback,
+                   persist=True)
+
 def aCallback(event=None):
+    global current_direction, arrived
     if event.event_type == arena.EventType.mouseup:
+        arrived = False
         print("A pressed! go to " + str(location['A'].location))
         goal = poseConvert("arena", "grid", location['A'].location)
-        #pose = Pose(x, y, z, angle_z=Angle(degrees=0))
-        #robot.behavior.go_to_pose(pose)
-        start_navigation(goal)
+
+        counter = 0
+        while cleanUpdate == False:
+            time.sleep(1)
+            print(str(cleanUpdate) + ' '+ str(counter))
+            counter+=1
+
+        x, y, z, w = current_rotation
+        quaternionObj = Quaternion(w, x, y, z)
+        current_direction = quaternionObj.rotate((0, 0, -1))
+        print('Current direction before convert is {}'.format(current_direction))
+        current_direction = poseConvert("arena", "grid", current_direction)
+        print('Current direction after convert is {}'.format(current_direction))
+
+        start = poseConvert("arena", "grid", current_position)
+        print('yo')
+        #calibrate_robot(start)
+
+        start_navigation(start, goal)
+
         location['A'].update(
             color = (255,255,255)
         )
@@ -155,65 +203,71 @@ def aCallback(event=None):
             color = red
         )
 
-def start_navigation(goal):
-    robotPos = (robot.pose.position.x, robot.pose.position.y, robot.pose.position.z)
-    start = poseConvert("robot", "grid", robotPos)
-    print('The start position is {} (robot) {} (grid)'.format(robotPos, start))
+def start_navigation(start, goal):
+    global robot_is_not_moving, current_direction, arrived
+
+    print('The start position {}'.format(start))
+
+    #start path planning
     came_from = plan_path(grid, start, goal)
     path = reconstruct_path(came_from, start, goal)
-
-    current = path[0]
-
     print(path)
+    
+    current = path[0]
+    for next_position in path[1:]:
+        robot_is_not_moving = False
 
-    for position in path[1:]:
-        global current_direction 
-
-        to_vector = tuple(np.subtract(position, current))
+        to_vector = tuple(np.subtract(next_position, current))
         print(to_vector)
 
         #caculate rotation
         rotate = angle_between(to_vector, current_direction)
-        robot.behavior.turn_in_place(Angle(radians = rotate)).result()
+        robot.behavior.turn_in_place(Angle(radians = rotate), speed = Angle(radians = 1.0)).result()
 
         current_direction = to_vector
 
-        if robot.proximity.last_sensor_reading.distance.distance_mm < 150:
-                print("obstacle at {} encountered!".format(position))
-                grid.add_obstacle(position)
-                start_navigation(goal)
+        if robot.proximity.last_sensor_reading.distance.distance_mm < 100:
+                print("obstacle at {} encountered!".format(next_position))
+                robot_is_not_moving = True
+                grid.add_obstacle(next_position)
+                start_navigation(current, goal)
 
-        #calculate distance
+        #calculate distance and drive
         dist = np.linalg.norm(to_vector) * 100
         drive_future = robot.behavior.drive_straight(distance_mm(dist), speed_mmps(50))
 
-        print(drive_future.done())
         while not drive_future.done():
-
-            print('robot.pose is {}'.format(robot.pose))
-            if robot.proximity.last_sensor_reading.distance.distance_mm < 150:
-                drive_future.cancel()
-                print("obstacle at {} encountered!".format(position))
-                grid.add_obstacle(position)
-                start_navigation(goal) 
-
+            if robot.proximity.last_sensor_reading.distance.distance_mm < 100:
+                drive_future.cancel() #robot stops
+                robot_is_not_moving = True
+                print("obstacle at {} encountered!".format(next_position))
+                grid.add_obstacle(next_position)
+                start_navigation(current, goal) 
             time.sleep(1)
+            if arrived == True:
+                print('arrived!')
+                return
         
-        drive_future.result()
+        #drive_future.result()
 
-        current = position
+        robot_is_not_moving = True
+
+        #calibrate_robot()
+
+        # if arrived == True:
+        #     return
+
+
+        current = next_position
+    
+    arrived = True
+        
+
 
 grid = SquareGrid(20, 20)
-# grid.add_obstacle((0, 1))
-# grid.add_obstacle((1, 1))          
-# grid.add_obstacle((2, 1))          
-# goal = (1, -2)
-# start = (0, 0)
 
 if __name__ == "__main__":
 
-    print(robot.pose)
-
-    initLocA()
+    init()
     arena.handle_events()
 
