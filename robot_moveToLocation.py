@@ -103,7 +103,7 @@ def initAll():
 
 
 if __name__ == "__main__":
-    robot.connect()
+    #robot.connect()
     initAll()
 
 arena.handle_events()

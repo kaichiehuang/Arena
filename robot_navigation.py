@@ -12,7 +12,7 @@ arena.init("oz.andrew.cmu.edu", "realm", "kaichieh1")
 print("after")
 
 robot = anki_vector.AsyncRobot()
-#robot = anki_vector.Robot()
+robot = anki_vector.Robot()
 robot.connect()
 location = {}
 current_direction = tuple()
@@ -23,6 +23,7 @@ red = (255, 0, 0)
 cleanUpdate = False
 robot_is_not_moving = True
 arrived = False
+canvas = {}
 
 def unit_vector(vector):
     """ Returns the unit vector of the vector.  """
@@ -108,6 +109,39 @@ def reconstruct_path(came_from, start, goal):
     path.reverse()
     return path
 
+def draw_path(path):
+    for waypoint in path:
+        print('way point is at {}'.format(poseConvert('grid', 'arena', waypoint)))
+        canvas[waypoint] = arena.Object(objType=arena.Shape.circle,
+        objName=str(waypoint),
+        location=poseConvert('grid', 'arena', waypoint),
+        scale=(0.03, 0.03, 0.03),
+        color=(0, 255, 255),
+        rotation=(-0.7, 0, 0, 0.7),
+        data='{"material": {"transparent":true,"opacity": 0.3}}'
+        )
+
+def erase_path(path):
+    for waypoint in path:
+        if waypoint in canvas:
+            canvas[waypoint].delete()
+
+def erase_waypoint(waypoint):
+    if waypoint in canvas:
+        canvas[waypoint].delete()
+
+def draw_obstacle(waypoint):
+    arena.Object(objType=arena.Shape.triangle,
+        objName=str(waypoint),
+        location=poseConvert('grid', 'arena', waypoint),
+        scale=(0.03, 0.03, 0.03),
+        color = red,
+        data='{"material": {"transparent":true,"opacity": 0.3}}',
+        rotation=(-0.7, 0, 0, 0.7),
+        )
+
+
+
 def calibrate_robot(calibrate_to_position, calibrate_to_direction = (1, 0)):
     if cleanUpdate == True:
         pass
@@ -116,13 +150,25 @@ def calibrate_robot(calibrate_to_position, calibrate_to_direction = (1, 0)):
 #below are Arena functions
 def tag_callback(event=None):
     ''' Since we expect the position/rotation updates, we can react here.'''
-    global current_rotation, current_position, cleanUpdate
+    global current_rotation, current_position, current_direction, cleanUpdate
     if event.event_action == arena.EventAction.update and \
             event.event_type == arena.EventType.object and robot_is_not_moving == True:
         print("Tag position: " + str(event.position))
         print("Tag rotation: " + str(event.rotation))
         current_position = event.position
         current_rotation = event.rotation
+
+        x, y, z, w = current_rotation
+        quaternionObj = Quaternion(w, x, y, z)
+        current_direction = quaternionObj.rotate((0, 0, -1))
+        print('Current direction before convert is {}'.format(current_direction))
+        current_direction = poseConvert("arena", "grid", current_direction)
+        #try without rounding
+        #current_direction2 = (current_direction[0]/0.1, current_direction[2]/0.1)
+        #print("without rounding, {}".format(current_direction2))
+
+
+        print('Current direction after convert is {}'.format(current_direction))
 
         cleanUpdate = True
         
@@ -131,40 +177,31 @@ def tag_callback(event=None):
 
 
 def poseConvert(original, to, position):
-    if original == 'arena' and to == 'robot':
-        x = position[0] * 1000
-        y = -1 * position[2] * 1000
-        z = 0
-        print("Converted position for vector is " + str((x, y, z)))
-        return (x, y, z)
-    elif original == 'robot' and to == 'arena':
-        x = position[0]/1000
-        y = position[2]/1000
-        z = -1 * position[1]/1000
-        return (x, y, z)
-    elif original == 'arena' and to == 'grid':
-        x = int(position[0]/0.1)
-        y = int(position[2]/0.1)
+    if original == 'arena' and to == 'grid':
+        x = round(position[0]/0.1)
+        y = round(position[2]/0.1)
+        #x = round(position[0]/0.05)
+        #y = round(position[2]/0.05)
+        print("After convert, ({},{})".format(x, y))
         return (x, y)
-    elif original == 'robot' and to == 'grid':
-        return poseConvert('arena', 'grid', poseConvert('robot', 'arena', position))
     elif original == 'grid' and to == 'arena':
+        print("After convert, ({},{},{})".format(position[0]/10, 0, position[1]/10))
         return (position[0]/10, 0, position[1]/10)
-    elif original == 'grid' and to == 'robot':
-        return poseConvert('arena', 'robot', poseConvert('grid', 'arena', position))
+        #return (position[0]/20, 0, position[1]/20)
 
 
 def init():
+    #global location
     location["A"] = arena.Object(objType=arena.Shape.circle,
         objName='A',
         clickable=True,
-        location=(0.3,0.1,-0.5),
+        location=(0.3,0,-0.7),
         scale=(0.05, 0.05, 0.05),
         rotation=(-0.7, 0, 0, 0.7),
         callback=aCallback,
         )
 
-    TAG = arena.Object(objName="apriltag_500",
+    TAG = arena.Object(objName="apriltag_400",
                    transparency=arena.Transparency(True, 0),
                    callback=tag_callback,
                    persist=True)
@@ -176,21 +213,12 @@ def aCallback(event=None):
         print("A pressed! go to " + str(location['A'].location))
         goal = poseConvert("arena", "grid", location['A'].location)
 
-        counter = 0
-        while cleanUpdate == False:
-            time.sleep(1)
-            print(str(cleanUpdate) + ' '+ str(counter))
-            counter+=1
-
-        x, y, z, w = current_rotation
-        quaternionObj = Quaternion(w, x, y, z)
-        current_direction = quaternionObj.rotate((0, 0, -1))
-        print('Current direction before convert is {}'.format(current_direction))
-        current_direction = poseConvert("arena", "grid", current_direction)
-        print('Current direction after convert is {}'.format(current_direction))
+        if cleanUpdate == False:
+            print("Need to scan tag first")
+            return
 
         start = poseConvert("arena", "grid", current_position)
-        print('yo')
+
         #calibrate_robot(start)
 
         start_navigation(start, goal)
@@ -200,7 +228,8 @@ def aCallback(event=None):
         )
     if event.event_type == arena.EventType.mousedown:
         location['A'].update(
-            color = red
+            color = red,
+            data='{"material": {"transparent":true,"opacity": 0.3}}'
         )
 
 def start_navigation(start, goal):
@@ -212,8 +241,10 @@ def start_navigation(start, goal):
     came_from = plan_path(grid, start, goal)
     path = reconstruct_path(came_from, start, goal)
     print(path)
+    draw_path(path[1:-1])
     
     current = path[0]
+
     for next_position in path[1:]:
         robot_is_not_moving = False
 
@@ -226,27 +257,30 @@ def start_navigation(start, goal):
 
         current_direction = to_vector
 
-        if robot.proximity.last_sensor_reading.distance.distance_mm < 100:
-                print("obstacle at {} encountered!".format(next_position))
-                robot_is_not_moving = True
-                grid.add_obstacle(next_position)
-                start_navigation(current, goal)
+        # if robot.proximity.last_sensor_reading.distance.distance_mm == 30:
+        #         print("obstacle at {} encountered!(1)".format(next_position))
+        #         robot_is_not_moving = True
+        #         grid.add_obstacle(next_position)
+        #         erase_path(path)
+        #         draw_obstacle(next_position)
+        #         start_navigation(current, goal)
 
         #calculate distance and drive
         dist = np.linalg.norm(to_vector) * 100
-        drive_future = robot.behavior.drive_straight(distance_mm(dist), speed_mmps(50))
+        drive_future = robot.behavior.drive_straight(distance_mm(dist), speed_mmps(30))
 
         while not drive_future.done():
-            if robot.proximity.last_sensor_reading.distance.distance_mm < 100:
+            if robot.proximity.last_sensor_reading.distance.distance_mm < 50:
                 drive_future.cancel() #robot stops
                 robot_is_not_moving = True
-                print("obstacle at {} encountered!".format(next_position))
+                print("obstacle at {} encountered!(2)".format(next_position))
                 grid.add_obstacle(next_position)
+                erase_path(path)
+                draw_obstacle(next_position)
                 start_navigation(current, goal) 
-            time.sleep(1)
-            if arrived == True:
-                print('arrived!')
-                return
+            #time.sleep(1)
+            # if arrived == True:
+            #     return
         
         #drive_future.result()
 
@@ -254,13 +288,14 @@ def start_navigation(start, goal):
 
         #calibrate_robot()
 
-        # if arrived == True:
-        #     return
-
 
         current = next_position
+        erase_waypoint(current)
+        if arrived == True:
+            return
     
     arrived = True
+    print('arrived!')
         
 
 
